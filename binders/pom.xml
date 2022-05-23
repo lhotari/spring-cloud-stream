@@ -17,6 +17,7 @@
 		<module>kafka-binder</module>
 		<module>rabbit-binder</module>
 		<module>kinesis-binder</module>
+		<module>pulsar-binder</module>
 	</modules>
 
 </project>

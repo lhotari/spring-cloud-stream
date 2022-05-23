@@ -1,0 +1,1 @@
+pulsar: org.springframework.cloud.stream.binder.pulsar.config.PulsarBinderConfiguration
