@@ -27,6 +27,7 @@ import java.util.function.Consumer;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,6 +74,11 @@ public class PulsarBinderFunctionalTests implements PulsarContainerTest {
 	@BeforeAll
 	static void setup() throws PulsarClientException {
 		PULSAR_CLIENT = PulsarContainerTest.pulsarClient();
+	}
+
+	@AfterAll
+	public static void closePulsarClient() throws PulsarClientException {
+		PULSAR_CLIENT.close();
 	}
 
 	@Test
