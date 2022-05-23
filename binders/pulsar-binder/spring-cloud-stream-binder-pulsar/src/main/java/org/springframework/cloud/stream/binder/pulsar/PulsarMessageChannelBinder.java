@@ -25,6 +25,7 @@ import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.SubscriptionType;
 import org.springframework.cloud.stream.binder.AbstractMessageChannelBinder;
 import org.springframework.cloud.stream.binder.BinderHeaders;
 import org.springframework.cloud.stream.binder.BinderSpecificPropertiesProvider;
@@ -38,7 +39,9 @@ import org.springframework.cloud.stream.binder.pulsar.properties.PulsarProducerP
 import org.springframework.cloud.stream.binder.pulsar.provisioning.PulsarTopicProvisioner;
 import org.springframework.cloud.stream.provisioning.ConsumerDestination;
 import org.springframework.cloud.stream.provisioning.ProducerDestination;
+import org.springframework.context.Lifecycle;
 import org.springframework.integration.core.MessageProducer;
+import org.springframework.integration.core.Pausable;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageDeliveryException;
@@ -56,8 +59,7 @@ import org.springframework.util.ObjectUtils;
  *
  */
 public class PulsarMessageChannelBinder extends
-		AbstractMessageChannelBinder<ExtendedConsumerProperties<PulsarConsumerProperties>,
-				ExtendedProducerProperties<PulsarProducerProperties>, PulsarTopicProvisioner>
+		AbstractMessageChannelBinder<ExtendedConsumerProperties<PulsarConsumerProperties>, ExtendedProducerProperties<PulsarProducerProperties>, PulsarTopicProvisioner>
 		implements
 		ExtendedPropertiesBinder<MessageChannel, PulsarConsumerProperties, PulsarProducerProperties> {
 
@@ -66,8 +68,8 @@ public class PulsarMessageChannelBinder extends
 
 	private PulsarExtendedBindingProperties extendedBindingProperties = new PulsarExtendedBindingProperties();
 
-
-	public PulsarMessageChannelBinder(PulsarBinderConfigurationProperties configurationProperties,
+	public PulsarMessageChannelBinder(
+			PulsarBinderConfigurationProperties configurationProperties,
 			PulsarTopicProvisioner provisioningProvider, PulsarClient pulsarClient) {
 
 		super(headersToMap(configurationProperties), provisioningProvider);
@@ -75,7 +77,8 @@ public class PulsarMessageChannelBinder extends
 		this.pulsarClient = pulsarClient;
 	}
 
-	public void setExtendedBindingProperties(PulsarExtendedBindingProperties extendedBindingProperties) {
+	public void setExtendedBindingProperties(
+			PulsarExtendedBindingProperties extendedBindingProperties) {
 		this.extendedBindingProperties = extendedBindingProperties;
 	}
 
@@ -99,8 +102,8 @@ public class PulsarMessageChannelBinder extends
 		return this.extendedBindingProperties.getExtendedPropertiesEntryClass();
 	}
 
-
-	private static String[] headersToMap(PulsarBinderConfigurationProperties configurationProperties) {
+	private static String[] headersToMap(
+			PulsarBinderConfigurationProperties configurationProperties) {
 		Assert.notNull(configurationProperties,
 				"'configurationProperties' must not be null");
 		if (ObjectUtils.isEmpty(configurationProperties.getHeaders())) {
@@ -118,60 +121,89 @@ public class PulsarMessageChannelBinder extends
 		}
 	}
 
-	@Override protected MessageHandler createProducerMessageHandler(ProducerDestination destination,
-		ExtendedProducerProperties<PulsarProducerProperties> producerProperties, MessageChannel errorChannel)
-		throws Exception {
+	@Override
+	protected MessageHandler createProducerMessageHandler(ProducerDestination destination,
+			ExtendedProducerProperties<PulsarProducerProperties> producerProperties,
+			MessageChannel errorChannel) throws Exception {
 
-		class PulsarMessageHandler implements MessageHandler {
+		class PulsarMessageHandler implements MessageHandler, Lifecycle {
 			private final Producer<byte[]> pulsarProducer;
+			private volatile boolean running;
 
 			public PulsarMessageHandler() {
 				try {
-					pulsarProducer = pulsarClient.newProducer().topic(destination.getName())
-						.create();
+					pulsarProducer = pulsarClient.newProducer()
+							.topic(destination.getName()).create();
 				}
 				catch (PulsarClientException e) {
 					throw new RuntimeException(e);
 				}
 			}
 
-			@Override public void handleMessage(Message<?> message) throws MessagingException {
+			@Override
+			public void handleMessage(Message<?> message) throws MessagingException {
 				try {
 					pulsarProducer.newMessage()
-						// support just byte[] for now
-						.value((byte[])message.getPayload())
-						// map headers to Map<String, String>
-						.properties(message.getHeaders().entrySet()
-							.stream()
-							.map(entry -> Map.entry(entry.getKey(), entry.getValue() != null ? String.valueOf(entry.getValue()) : null))
-							.collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)))
-						.send();
+							// support just byte[] for now
+							.value((byte[]) message.getPayload())
+							// map headers to Map<String, String>
+							.properties(message.getHeaders().entrySet().stream()
+									.map(entry -> Map.entry(entry.getKey(),
+											entry.getValue() != null
+													? String.valueOf(entry.getValue())
+													: null))
+									.collect(Collectors.toUnmodifiableMap(
+											Map.Entry::getKey, Map.Entry::getValue)))
+							.send();
 				}
 				catch (PulsarClientException e) {
 					throw new MessageDeliveryException(message, e);
 				}
+			}
+
+			@Override public void start() {
+				running = true;
+			}
+
+			@Override public void stop() {
+				running = false;
+				try {
+					pulsarProducer.close();
+				}
+				catch (PulsarClientException e) {
+					throw new RuntimeException(e);
+				}
+			}
+
+			@Override public boolean isRunning() {
+				return running;
 			}
 		}
 
 		return new PulsarMessageHandler();
 	}
 
-	@Override protected MessageProducer createConsumerEndpoint(ConsumerDestination destination, String group,
-		ExtendedConsumerProperties<PulsarConsumerProperties> properties) {
+	@Override
+	protected MessageProducer createConsumerEndpoint(ConsumerDestination destination,
+			String group,
+			ExtendedConsumerProperties<PulsarConsumerProperties> properties) {
 
-
-		class PulsarMessageProducer implements MessageProducer {
+		class PulsarMessageProducer implements MessageProducer, Pausable {
 			private final Consumer<byte[]> pulsarConsumer;
 			private MessageChannel outputChannel;
+
+			private volatile boolean running;
 
 			PulsarMessageProducer() {
 				try {
 					pulsarConsumer = pulsarClient.newConsumer()
-						.topic(destination.getName())
-						.subscriptionName(group == null || group.isBlank() ? destination.getName() : group)
-						.messageListener(this::consumeMessage)
-						.startPaused(true)
-						.subscribe();
+							.topic(destination.getName())
+							.subscriptionType(SubscriptionType.Shared)
+							.subscriptionName(
+									group == null || group.isBlank() ? "anonymous"
+											: group)
+							.messageListener(this::consumeMessage).startPaused(true)
+							.subscribe();
 				}
 				catch (PulsarClientException e) {
 					throw new RuntimeException(e);
@@ -185,13 +217,46 @@ public class PulsarMessageChannelBinder extends
 				outputChannel.send(msg);
 			}
 
-			@Override public void setOutputChannel(MessageChannel outputChannel) {
+			@Override
+			public void setOutputChannel(MessageChannel outputChannel) {
 				this.outputChannel = outputChannel;
+			}
+
+			@Override
+			public MessageChannel getOutputChannel() {
+				return outputChannel;
+			}
+
+			@Override
+			public void pause() {
+				pulsarConsumer.pause();
+			}
+
+			@Override
+			public void resume() {
 				pulsarConsumer.resume();
 			}
 
-			@Override public MessageChannel getOutputChannel() {
-				return outputChannel;
+			@Override
+			public void start() {
+				running = true;
+				pulsarConsumer.resume();
+			}
+
+			@Override
+			public void stop() {
+				try {
+					running = false;
+					pulsarConsumer.close();
+				}
+				catch (PulsarClientException e) {
+					throw new RuntimeException(e);
+				}
+			}
+
+			@Override
+			public boolean isRunning() {
+				return running;
 			}
 		}
 
