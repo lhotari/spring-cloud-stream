@@ -54,17 +54,6 @@ public class PulsarBinderTests extends
 		PULSAR_CLIENT = PulsarContainerTest.pulsarClient();
 	}
 
-	@Test
-	@Override
-	public void testClean(TestInfo testInfo) {
-	}
-
-	@Test
-	@Override
-	public void testPartitionedModuleSpEL(TestInfo testInfo) {
-
-	}
-
 	@Override
 	protected boolean usesExplicitRouting() {
 		return false;
@@ -121,6 +110,18 @@ public class PulsarBinderTests extends
 	@Override
 	@Disabled
 	public void testAnonymousGroup(TestInfo testInfo) throws Exception {
-		// this doesn't make sense in Pulsar because of the receive queue that consumes messages
+		// this doesn't make sense in Pulsar because of the receive queue that consumes
+		// messages
+	}
+
+	@Override
+	@Disabled
+	public void testClean(TestInfo testInfo) {
+	}
+
+	@Override
+	@Disabled
+	public void testPartitionedModuleSpEL(TestInfo testInfo) {
+
 	}
 }
