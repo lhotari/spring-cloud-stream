@@ -19,6 +19,7 @@ package org.springframework.cloud.stream.binder.pulsar;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.springframework.cloud.stream.binder.ExtendedConsumerProperties;
@@ -117,4 +118,9 @@ public class PulsarBinderTests extends
 		throw new UnsupportedOperationException("'spyOn' is not used by Pulsar tests");
 	}
 
+	@Override
+	@Disabled
+	public void testAnonymousGroup(TestInfo testInfo) throws Exception {
+		// this doesn't make sense in Pulsar because of the receive queue that consumes messages
+	}
 }

@@ -19,12 +19,16 @@ package org.springframework.cloud.stream.binder.pulsar;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.apache.pulsar.client.api.Consumer;
+import org.apache.pulsar.client.api.ConsumerBuilder;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.api.SubscriptionMode;
 import org.apache.pulsar.client.api.SubscriptionType;
 import org.springframework.cloud.stream.binder.AbstractMessageChannelBinder;
 import org.springframework.cloud.stream.binder.BinderHeaders;
@@ -196,13 +200,17 @@ public class PulsarMessageChannelBinder extends
 
 			PulsarMessageProducer() {
 				try {
-					pulsarConsumer = pulsarClient.newConsumer()
-							.topic(destination.getName())
-							.subscriptionType(SubscriptionType.Shared)
-							.subscriptionName(
-									group == null || group.isBlank() ? "anonymous"
-											: group)
-							.messageListener(this::consumeMessage).startPaused(true)
+					ConsumerBuilder<byte[]> consumerBuilder = pulsarClient.newConsumer().topic(destination.getName())
+						.messageListener(this::consumeMessage)
+						.startPaused(true)
+						.subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+						.subscriptionType(SubscriptionType.Shared);
+					if (group == null || group.isBlank()) {
+						consumerBuilder.subscriptionName("anonymous");
+					} else {
+						consumerBuilder.subscriptionName(group);
+					}
+					pulsarConsumer = consumerBuilder
 							.subscribe();
 				}
 				catch (PulsarClientException e) {
